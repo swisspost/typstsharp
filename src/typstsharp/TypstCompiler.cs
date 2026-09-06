@@ -671,6 +671,40 @@ public sealed record PdfResult(byte[] Bytes, IReadOnlyList<string> Warnings)
 }
 
 /// <summary>
+/// Walks the pages of a compile result without allocating.
+/// </summary>
+/// <remarks>
+/// <see cref="SvgResult"/> and <see cref="PngResult"/> hold their pages behind
+/// <see cref="IReadOnlyList{T}"/>. Returning that list's own enumerator would box it, because the
+/// list hands it back as an <see cref="IEnumerator{T}"/> rather than as its own struct. Indexing
+/// instead costs one interface call per page and nothing on the heap.
+/// </remarks>
+/// <typeparam name="T">The page type: an SVG string or the bytes of a PNG.</typeparam>
+public struct PageEnumerator<T> : IEnumerator<T>
+{
+    private readonly IReadOnlyList<T> _pages;
+    private int _index;
+
+    internal PageEnumerator(IReadOnlyList<T> pages)
+    {
+        _pages = pages;
+        _index = -1;
+    }
+
+    public readonly T Current => _pages[_index];
+
+    readonly object? System.Collections.IEnumerator.Current => Current;
+
+    public bool MoveNext() => ++_index < _pages.Count;
+
+    public void Reset() => _index = -1;
+
+    public readonly void Dispose()
+    {
+    }
+}
+
+/// <summary>
 /// Represents the result of compiling a document to SVG format (one SVG string per page).
 /// Supports implicit conversion to <see cref="string"/> (returning the primary page SVG).
 /// </summary>
@@ -678,7 +712,15 @@ public sealed record SvgResult(IReadOnlyList<string> Pages, IReadOnlyList<string
 {
     public int Count => Pages.Count;
     public string this[int index] => Pages[index];
-    public IEnumerator<string> GetEnumerator() => Pages.GetEnumerator();
+
+    /// <summary>
+    /// Returns a struct enumerator, which <c>foreach</c> binds to in preference to the interface.
+    /// Forwarding straight to <c>Pages.GetEnumerator()</c> would hand back the underlying list's
+    /// enumerator through <see cref="IEnumerator{T}"/> and box it once per enumeration.
+    /// </summary>
+    public PageEnumerator<string> GetEnumerator() => new(Pages);
+
+    IEnumerator<string> IEnumerable<string>.GetEnumerator() => Pages.GetEnumerator();
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => Pages.GetEnumerator();
 
     /// <summary>
@@ -740,7 +782,15 @@ public sealed record PngResult(IReadOnlyList<byte[]> Pages, IReadOnlyList<string
 {
     public int Count => Pages.Count;
     public byte[] this[int index] => Pages[index];
-    public IEnumerator<byte[]> GetEnumerator() => Pages.GetEnumerator();
+
+    /// <summary>
+    /// Returns a struct enumerator, which <c>foreach</c> binds to in preference to the interface.
+    /// Forwarding straight to <c>Pages.GetEnumerator()</c> would hand back the underlying list's
+    /// enumerator through <see cref="IEnumerator{T}"/> and box it once per enumeration.
+    /// </summary>
+    public PageEnumerator<byte[]> GetEnumerator() => new(Pages);
+
+    IEnumerator<byte[]> IEnumerable<byte[]>.GetEnumerator() => Pages.GetEnumerator();
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => Pages.GetEnumerator();
 
     /// <summary>
