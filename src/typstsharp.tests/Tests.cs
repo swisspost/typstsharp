@@ -910,6 +910,26 @@ public class Tests
         await Assert.That(document.Warnings is string[]).IsFalse();
     }
 
+    /// <summary>
+    /// A clean compile takes a different branch from one that reports warnings, so the empty case
+    /// needs the same guarantees: enumerable, and not a mutable array handed out to callers.
+    /// </summary>
+    [Test]
+    public async Task WarningsFromACleanCompileAreEmptyAndStillImmutable()
+    {
+        using var compiler = TypstCompiler.FromSource("= No warnings here");
+        using var document = compiler.CompileToDocument();
+
+        await Assert.That(document.Warnings.Count).IsEqualTo(0);
+        await Assert.That(document.Warnings is string[]).IsFalse();
+        await Assert.That(document.Warnings.Any()).IsFalse();
+
+        document.Dispose();
+
+        // Warnings are copied out of native memory eagerly, so they outlive the document.
+        await Assert.That(document.Warnings.Count).IsEqualTo(0);
+    }
+
     private const string TwoPageSource = """
                                          First page
                                          #pagebreak()

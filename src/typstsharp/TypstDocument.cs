@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.ObjectModel;
 using Microsoft.Win32.SafeHandles;
 
 namespace typstsharp;
@@ -52,14 +53,26 @@ public sealed class TypstDocument : IDisposable
             throw new InvalidOperationException("The Typst compiler reported warnings but returned none.");
         }
 
-        // Warnings are small and are copied eagerly so that they stay usable after disposal.
-        var warnings = new string[warningCount];
-        for (int i = 0; i < warnings.Length; i++)
+        // Warnings are small and are copied eagerly so that they stay usable after disposal. A
+        // clean compile is the common case and reaches the shared empty collection, which spares
+        // every such document both the zero-length array and the wrapper around it.
+        IReadOnlyList<string> warnings;
+        if (warningCount == 0)
         {
-            var warning = native.warnings[i];
-            warnings[i] = warning.message_ptr != null
-                ? System.Text.Encoding.UTF8.GetString(new ReadOnlySpan<byte>(warning.message_ptr, checked((int)warning.message_len)))
-                : string.Empty;
+            warnings = ReadOnlyCollection<string>.Empty;
+        }
+        else
+        {
+            var collected = new string[warningCount];
+            for (int i = 0; i < collected.Length; i++)
+            {
+                var warning = native.warnings[i];
+                collected[i] = warning.message_ptr != null
+                    ? System.Text.Encoding.UTF8.GetString(new ReadOnlySpan<byte>(warning.message_ptr, checked((int)warning.message_len)))
+                    : string.Empty;
+            }
+
+            warnings = Array.AsReadOnly(collected);
         }
 
         long nativeByteCount = 0;
@@ -69,7 +82,7 @@ public sealed class TypstDocument : IDisposable
         }
 
         _outputCount = outputCount;
-        _warnings = Array.AsReadOnly(warnings);
+        _warnings = warnings;
         _nativeByteCount = nativeByteCount;
 
         // Taking ownership must be the last thing that happens. An object with a finalizer is queued
