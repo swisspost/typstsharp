@@ -14,5 +14,6 @@
 - Added support for compiling Typst documents with multiple PDF standards simultaneously (e.g. `v-1.7`, `a-2b`, etc.) by exposing a `pdfStandards` parameter in the `TypstCompiler.Compile` API, leveraging the underlying `typst-pdf` crate updates in Typst 0.15.
 
 ### Changed
+- `sysInputs` parameters on `TypstCompiler` and the `SetSysInputs` argument are now `IDictionary<string, string>` instead of `Dictionary<string, string>`, so a `ReadOnlyDictionary<string, string>`, `ImmutableDictionary<string, string>` or any other implementation can be passed. Existing calls that pass a `Dictionary<string, string>` are unaffected.
 - `compiler.CompilePdf(Stream)`, `compiler.CompilePdfAsync(Stream)`, `compiler.CompilePdf(string outputFile)` and `compiler.CompilePdfAsync(string outputFile)` now stream the document straight from native memory to the destination and return the compiler warnings, rather than returning a `PdfResult` that had to be materialised on the managed heap first. Use `compiler.CompilePdf()` when you want the bytes.
 - `compiler.Compile(outputFile, format)` and `compiler.CompileSvg(...)` no longer copy the rendered output onto the managed heap before writing or decoding it.
