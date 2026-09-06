@@ -326,24 +326,53 @@ public sealed class TypstDocument : IDisposable
     private sealed unsafe class OutputStream : UnmanagedMemoryStream
     {
         private readonly TypstDocument _owner;
+        private readonly byte* _pointer;
 
         internal OutputStream(TypstDocument owner, byte* pointer, long length)
             : base(pointer, length, length, FileAccess.Read)
         {
             _owner = owner;
+            _pointer = pointer;
         }
 
-        // Only the byte-array reads are overridden. Every other read path on Stream and
-        // UnmanagedMemoryStream, span and async alike, ends up calling one of these two, so this
-        // covers them all. Overriding Read(Span) as well would recurse: the UnmanagedMemoryStream
-        // override delegates to Stream.Read(Span) for any derived type, and that implementation
-        // calls back into Read(byte[]).
-        public override int Read(byte[] buffer, int offset, int count)
+        /// <summary>
+        /// Copies straight out of the native buffer, which is what keeps every span-shaped and
+        /// asynchronous read off the managed heap.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="UnmanagedMemoryStream"/> only takes its own direct path when the runtime type is
+        /// exactly <see cref="UnmanagedMemoryStream"/>; for a derived type it defers to
+        /// <see cref="Stream.Read(Span{byte})"/>, which rents an array the size of the caller's span
+        /// from the shared <see cref="ArrayPool{T}"/>, reads into it, copies it out, and returns it to
+        /// the pool without clearing it. That costs a second copy of every byte and, worse, leaves the
+        /// rendered document in a process-wide pool for whatever rents from it next, which is the very
+        /// thing <c>PooledBuffer</c> clears its buffer to avoid. Reading the pointer here sidesteps
+        /// both. It does not recurse: recursion would need a call back into <c>base.Read(Span)</c>.
+        /// </remarks>
+        public override int Read(Span<byte> buffer)
         {
             ObjectDisposedException.ThrowIf(_owner.IsDisposed, _owner);
-            int read = base.Read(buffer, offset, count);
+
+            long position = Position;
+            int count = (int)Math.Min((long)buffer.Length, Length - position);
+            if (count <= 0)
+            {
+                GC.KeepAlive(_owner);
+                return 0;
+            }
+
+            new ReadOnlySpan<byte>(_pointer + position, count).CopyTo(buffer);
+            Position = position + count;
             GC.KeepAlive(_owner);
-            return read;
+            return count;
+        }
+
+        // Every other read path on Stream and UnmanagedMemoryStream, byte array and async alike,
+        // funnels into Read(Span) above.
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            ValidateBufferArguments(buffer, offset, count);
+            return Read(new Span<byte>(buffer, offset, count));
         }
 
         public override int ReadByte()
