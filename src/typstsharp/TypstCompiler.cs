@@ -340,6 +340,11 @@ public class TypstCompiler : IDisposable
     /// such a compilation to release that memory at once.
     /// </para>
     /// <para>
+    /// What the cache held is returned to the operating system, not only freed inside the process,
+    /// so the resident size of the process drops. It does not lower the peak of a single
+    /// compilation, which grows with the size of the document.
+    /// </para>
+    /// <para>
     /// The next compilation does the work it did the first time, for every compiler in the process,
     /// so calling this after every compilation gives up most of the benefit of reusing a compiler.
     /// The sources and fonts a compiler has loaded are kept.

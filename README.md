@@ -287,7 +287,33 @@ typstsharp: the next compilation of each template starts cold. Call it after lar
 than after every compilation. It is safe to call while other threads compile. They lose cached
 results and compute them again, and documents already compiled stay valid.
 
-On Alpine / musl (`linux-musl-*`), musl's allocator reuses freed memory for later compilations but rarely hands it back to the operating system, so the resident size stops growing rather than shrinking. Clearing the cache does not lower the peak of a single compilation either: to bound that, split a large document into several smaller ones and clear the cache between them.
+#### Giving memory back to the operating system
+
+The native library allocates with [mimalloc](https://github.com/microsoft/mimalloc) on every platform,
+instead of the allocator of the process it is loaded into (glibc, musl, or the Windows heap). Those
+allocators keep memory that was freed in the middle of their heaps instead of returning it, so after
+one large compilation the process stayed at the size of that compilation's peak for good, even though
+almost all of it was free again. mimalloc is private to the library: it does not replace `malloc` in
+your process, and the managed side never frees native memory that Rust allocated, or the other way
+round.
+
+`EvictCache()` therefore returns what it frees to the operating system right away, instead of
+leaving it with the allocator. On Linux with glibc, compiling a 4000-label document (2000 labels on
+each of two threads) over and over peaked at 2.6 GB, and the process still held 2.6 GB after the
+cache was cleared. With mimalloc it peaks at 2.3 GB and holds 0.9 GB after the cache is cleared. The
+first compilation in a fresh process peaks a little higher, 2.5 GB against 2.2 GB. What remains
+after clearing the cache is the memory of the compilers themselves and the capacity of the cache's
+hash tables, which grow with the largest document the process has compiled.
+Two things this does not do. It does not lower the peak of a single compilation, which grows with
+the size of the document: to bound that, split a large document into several smaller ones and
+clear the cache between them. And mimalloc returns memory by itself only after a short delay and only
+while the threads that allocated it keep allocating, so a process that goes quiet after a large
+document keeps it until `EvictCache()` is called.
+
+mimalloc reads its tuning from environment variables, which still apply: for example
+`MIMALLOC_PURGE_DELAY=0` returns freed memory at once, at the cost of some speed, and lowers the
+peak a little. If you build `typst_core` yourself, the `mimalloc` Cargo feature, on by default,
+turns this off, and the library then allocates with the host process again.
 
 ## Supported Platforms & NuGet Packages
 

@@ -94,6 +94,12 @@ jobs:
         shell: bash
         run: cargo test --manifest-path src/typst_core/Cargo.toml --release
 
+      # A test binary has one global allocator. cache_eviction counts allocations with its own, which
+      # the default mimalloc allocator rules out, so it only runs without the feature.
+      - name: Run native tests without mimalloc
+        shell: bash
+        run: cargo test --manifest-path src/typst_core/Cargo.toml --release --no-default-features
+
       - name: Run solution tests
         shell: bash
         run: dotnet test --solution typstsharp.slnx
