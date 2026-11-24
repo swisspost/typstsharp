@@ -4,6 +4,10 @@
 //! This file is its own test binary so that it can count every heap allocation in the process with
 //! a global allocator. It holds a single test on purpose: the cache and the allocator are both
 //! process-wide, so a second test running in parallel would skew the counts.
+//!
+//! A binary has one global allocator, and with the default `mimalloc` feature that is mimalloc, so
+//! this test runs with `--no-default-features`. `memory_release.rs` covers the default build.
+#![cfg(not(feature = "mimalloc"))]
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::ffi::{c_char, CString};

@@ -25,6 +25,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 mod compiler;
 mod download;
+mod memory;
 mod world;
 
 use ecow::EcoString;
@@ -598,21 +599,32 @@ pub extern "C" fn get_max_cache_age() -> usize {
 /// recompute them, but their output is unaffected. The cache holds no references to any
 /// [`CompileResult`], so results the caller is still holding stay valid.
 ///
+/// What the cache held is also handed back to the operating system, not only freed inside the
+/// process. Without that, the process stays as large as the compilation that filled the cache,
+/// which is what an application under a memory limit cannot afford.
+///
 /// Returns `false` if the eviction panicked. The panic is caught rather than unwinding across the
 /// ABI boundary.
 #[unsafe(no_mangle)]
 pub extern "C" fn evict_cache() -> bool {
-    std::panic::catch_unwind(|| comemo::evict(0)).is_ok()
+    evict_and_release(0)
 }
 
 /// Trims the process-global incremental compilation cache to entries used within the last
 /// `max_age` compilations.
 ///
-/// Pass `0` to clear the cache completely (equivalent to [`evict_cache`]). Returns `false` if the
-/// eviction panicked.
+/// Pass `0` to clear the cache completely (equivalent to [`evict_cache`]). Like [`evict_cache`],
+/// it hands the memory it frees back to the operating system. Returns `false` if the eviction
+/// panicked.
 #[unsafe(no_mangle)]
 pub extern "C" fn evict_cache_with_max_age(max_age: usize) -> bool {
-    std::panic::catch_unwind(|| comemo::evict(max_age)).is_ok()
+    evict_and_release(max_age)
+}
+
+fn evict_and_release(max_age: usize) -> bool {
+    let evicted = std::panic::catch_unwind(|| comemo::evict(max_age)).is_ok();
+    memory::release_free_memory();
+    evicted
 }
 
 #[cfg(test)]

@@ -6,6 +6,13 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["mimalloc"]
+# Serve every Rust allocation from mimalloc instead of the host process' allocator, so that
+# memory freed after a compilation is returned to the operating system. Turn it off only to
+# run tests that need their own global allocator.
+mimalloc = ["dep:mimalloc", "dep:libmimalloc-sys"]
+
 [dependencies]
 comemo = "0.5.0"
 ecow = "0.2"
@@ -23,6 +30,22 @@ typst-pdf = "0.15.1"
 typst-svg = "0.15.1"
 typst-render = "0.15.1"
 typst-layout = "0.15.1"
+
+# Only used with the `mimalloc` feature. See `src/memory.rs`.
+#
+# mimalloc v3, the default of the mimalloc crate as of 0.1.52. v2 did not return the memory `mi_collect` freed
+# to the operating system in our measurements, so a crate update that changes the default has to
+# be measured again.
+#
+# `local_dynamic_tls`: the library is loaded with dlopen, where the default initial-exec TLS model
+# can fail with "cannot allocate memory in static TLS block" once the host has loaded enough
+# libraries.
+#
+# `no_thp`: do not madvise(MADV_HUGEPAGE) the allocator's memory. With transparent huge pages set
+# to `madvise`, the default on many distributions, a compilation peaked about 20% higher, and
+# memory it freed stayed charged to the cgroup.
+mimalloc = { version = "0.1.52", optional = true, features = ["local_dynamic_tls", "no_thp"] }
+libmimalloc-sys = { version = "0.1.49", optional = true, features = ["extended"] }
 
 [build-dependencies]
 csbindgen = "1.9.7"

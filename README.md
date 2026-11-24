@@ -287,7 +287,26 @@ typstsharp: the next compilation of each template starts cold. Call it after lar
 than after every compilation. It is safe to call while other threads compile. They lose cached
 results and compute them again, and documents already compiled stay valid.
 
-On Alpine / musl (`linux-musl-*`), musl's allocator reuses freed memory for later compilations but rarely hands it back to the operating system, so the resident size stops growing rather than shrinking. Clearing the cache does not lower the peak of a single compilation either: to bound that, split a large document into several smaller ones and clear the cache between them.
+#### Giving memory back to the operating system
+
+The native library allocates with [mimalloc](https://github.com/microsoft/mimalloc) rather than with
+the allocator of the host process. glibc, for one, keeps freed memory in its arenas, so a process
+stayed at the peak of its largest compilation even after `EvictCache()`. mimalloc is private to the
+library: it does not replace `malloc` in your process, and native buffers are always freed by the
+library that allocated them.
+
+`EvictCache()` returns the memory it frees to the operating system right away. Compiling two
+1000-page documents concurrently, over and over on Linux, the process held 2.6 GB after
+`EvictCache()` with glibc and holds 0.9 GB with mimalloc. What remains is the compilers' own memory
+and the capacity of the cache's hash tables, which grows with the largest document compiled.
+
+This does not lower the peak of a single compilation, which grows with the size of the document: to
+bound it, split a large document and clear the cache in between. Without `EvictCache()`, mimalloc
+returns freed memory only after a delay and only while the threads that allocated it keep
+allocating.
+
+mimalloc's `MIMALLOC_*` environment variables apply. glibc's (`MALLOC_ARENA_MAX`, `malloc_trim`) no
+longer affect the library's memory.
 
 ## Supported Platforms & NuGet Packages
 

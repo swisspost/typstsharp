@@ -152,6 +152,10 @@ namespace CsBindgen
         ///  recompute them, but their output is unaffected. The cache holds no references to any
         ///  [`CompileResult`], so results the caller is still holding stay valid.
         ///
+        ///  What the cache held is also handed back to the operating system, not only freed inside the
+        ///  process. Without that, the process stays as large as the compilation that filled the cache,
+        ///  which is what an application under a memory limit cannot afford.
+        ///
         ///  Returns `false` if the eviction panicked. The panic is caught rather than unwinding across the
         ///  ABI boundary.
         /// </summary>
@@ -163,8 +167,9 @@ namespace CsBindgen
         ///  Trims the process-global incremental compilation cache to entries used within the last
         ///  `max_age` compilations.
         ///
-        ///  Pass `0` to clear the cache completely (equivalent to [`evict_cache`]). Returns `false` if the
-        ///  eviction panicked.
+        ///  Pass `0` to clear the cache completely (equivalent to [`evict_cache`]). Like [`evict_cache`],
+        ///  it hands the memory it frees back to the operating system. Returns `false` if the eviction
+        ///  panicked.
         /// </summary>
         [DllImport(__DllName, EntryPoint = "evict_cache_with_max_age", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         [return: MarshalAs(UnmanagedType.U1)]
