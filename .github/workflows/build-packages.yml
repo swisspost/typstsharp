@@ -51,12 +51,22 @@ jobs:
           path: artifacts/*.nupkg
 
   unit-tests:
-    name: Run unit tests (Rust & .NET)
+    name: Run unit tests (Rust & .NET, ${{ matrix.os }})
     if: inputs.run_tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     env:
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
+          # The native library is loaded into the test host as a DLL, which is the case where
+          # mimalloc's thread-local state is set up differently from Linux.
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
 
     steps:
       - name: Checkout repository
@@ -68,6 +78,7 @@ jobs:
           dotnet-version: 11.x
 
       - name: Install Linux build prerequisites
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
@@ -83,7 +94,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          target: x86_64-unknown-linux-gnu
+          target: ${{ matrix.rust_target }}
           cache-workspaces: src/typst_core
           rust-src-dir: src/typst_core
 
@@ -97,6 +108,7 @@ jobs:
       # A test binary has one global allocator. cache_eviction counts allocations with its own, which
       # the default mimalloc allocator rules out, so it only runs without the feature.
       - name: Run native tests without mimalloc
+        if: runner.os == 'Linux'
         shell: bash
         run: cargo test --manifest-path src/typst_core/Cargo.toml --release --no-default-features
 

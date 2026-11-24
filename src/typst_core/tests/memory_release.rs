@@ -9,7 +9,10 @@
 //!
 //! This file is its own test binary and holds a single test on purpose: the cache and the
 //! allocator are both process-wide, so a second test running in parallel would skew the numbers.
-#![cfg(feature = "mimalloc")]
+//!
+//! Linux only: it reads the resident size from `/proc`, and Linux, with glibc, is where the host
+//! allocator kept the memory.
+#![cfg(all(feature = "mimalloc", target_os = "linux"))]
 
 use std::ffi::{c_char, CString};
 use std::sync::mpsc;
@@ -22,9 +25,8 @@ use typst_core::{
 
 /// The memory the process holds in physical memory, which is what a container limit counts.
 ///
-/// On Linux that is read from the kernel. mimalloc can only estimate it there, from what it has
-/// committed, and committed memory it has returned to the operating system keeps counting.
-#[cfg(target_os = "linux")]
+/// Read from the kernel rather than from mimalloc, which on Linux only estimates it from what it has
+/// committed, and keeps counting memory it has already returned.
 fn resident_bytes() -> usize {
     let status = std::fs::read_to_string("/proc/self/status").unwrap();
     let kib: usize = status
@@ -37,27 +39,6 @@ fn resident_bytes() -> usize {
         .parse()
         .unwrap();
     kib * 1024
-}
-
-#[cfg(not(target_os = "linux"))]
-fn resident_bytes() -> usize {
-    let mut rss = 0usize;
-    // SAFETY: every out-parameter of `mi_process_info` is optional, so the ones left null are
-    // skipped, and the one passed is a valid pointer to a `usize`. On Windows and macOS the
-    // resident size it reports is exact.
-    unsafe {
-        libmimalloc_sys::mi_process_info(
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            &mut rss,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        );
-    }
-    rss
 }
 
 /// A compiler that is handed to another thread. It is only ever used by one thread at a time.

@@ -289,31 +289,24 @@ results and compute them again, and documents already compiled stay valid.
 
 #### Giving memory back to the operating system
 
-The native library allocates with [mimalloc](https://github.com/microsoft/mimalloc) on every platform,
-instead of the allocator of the process it is loaded into (glibc, musl, or the Windows heap). Those
-allocators keep memory that was freed in the middle of their heaps instead of returning it, so after
-one large compilation the process stayed at the size of that compilation's peak for good, even though
-almost all of it was free again. mimalloc is private to the library: it does not replace `malloc` in
-your process, and the managed side never frees native memory that Rust allocated, or the other way
-round.
+The native library allocates with [mimalloc](https://github.com/microsoft/mimalloc) rather than with
+the allocator of the host process. glibc, for one, keeps freed memory in its arenas, so a process
+stayed at the peak of its largest compilation even after `EvictCache()`. mimalloc is private to the
+library: it does not replace `malloc` in your process, and native buffers are always freed by the
+library that allocated them.
 
-`EvictCache()` therefore returns what it frees to the operating system right away, instead of
-leaving it with the allocator. On Linux with glibc, compiling a 4000-label document (2000 labels on
-each of two threads) over and over peaked at 2.6 GB, and the process still held 2.6 GB after the
-cache was cleared. With mimalloc it peaks at 2.3 GB and holds 0.9 GB after the cache is cleared. The
-first compilation in a fresh process peaks a little higher, 2.5 GB against 2.2 GB. What remains
-after clearing the cache is the memory of the compilers themselves and the capacity of the cache's
-hash tables, which grow with the largest document the process has compiled.
-Two things this does not do. It does not lower the peak of a single compilation, which grows with
-the size of the document: to bound that, split a large document into several smaller ones and
-clear the cache between them. And mimalloc returns memory by itself only after a short delay and only
-while the threads that allocated it keep allocating, so a process that goes quiet after a large
-document keeps it until `EvictCache()` is called.
+`EvictCache()` returns the memory it frees to the operating system right away. Compiling two
+1000-page documents concurrently, over and over on Linux, the process held 2.6 GB after
+`EvictCache()` with glibc and holds 0.9 GB with mimalloc. What remains is the compilers' own memory
+and the capacity of the cache's hash tables, which grows with the largest document compiled.
 
-mimalloc reads its tuning from environment variables, which still apply: for example
-`MIMALLOC_PURGE_DELAY=0` returns freed memory at once, at the cost of some speed, and lowers the
-peak a little. If you build `typst_core` yourself, the `mimalloc` Cargo feature, on by default,
-turns this off, and the library then allocates with the host process again.
+This does not lower the peak of a single compilation, which grows with the size of the document: to
+bound it, split a large document and clear the cache in between. Without `EvictCache()`, mimalloc
+returns freed memory only after a delay and only while the threads that allocated it keep
+allocating.
+
+mimalloc's `MIMALLOC_*` environment variables apply. glibc's (`MALLOC_ARENA_MAX`, `malloc_trim`) no
+longer affect the library's memory.
 
 ## Supported Platforms & NuGet Packages
 
